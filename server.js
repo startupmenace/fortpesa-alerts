@@ -12,7 +12,6 @@ if (fs.existsSync(envFile)) {
 const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
-const { WebSocketServer } = require('ws');
 const { api, verifySignature, normalizePhone, safeEqual } = require('./fortpesa');
 
 const PORT = process.env.PORT || 3000;
@@ -24,16 +23,20 @@ const ENABLE_TEST = process.env.ENABLE_TEST === '1';
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
 
 // Donor name/message, keyed by Fortpesa transaction uuid (webhooks don't carry them).
 // In-memory: lost on restart; use Redis/DB in production.
 const pending = new Map();
 const alerted = new Set(); // dedupe retried webhooks
 
+// SSE clients: array of { res, token }
+const sseClients = [];
+
 function broadcast(alert) {
-  const data = JSON.stringify({ type: 'donation', ...alert });
-  for (const c of wss.clients) if (c.readyState === 1) c.send(data);
+  const data = `data: ${JSON.stringify({ type: 'donation', ...alert })}\n\n`;
+  for (const client of sseClients) {
+    try { client.res.write(data); } catch { /* client gone */ }
+  }
 }
 
 const FRIENDLY = {
@@ -103,6 +106,29 @@ app.post('/webhook/fortpesa', express.raw({ type: '*/*', limit: '100kb' }), asyn
   } catch (e) { console.error('webhook processing failed:', e.message); }
 });
 
+// SSE endpoint for OBS overlay
+app.get('/events', (req, res) => {
+  const token = req.query.token || '';
+  if (OVERLAY_TOKEN && !safeEqual(token, OVERLAY_TOKEN)) {
+    return res.sendStatus(401);
+  }
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.write('\n'); // initial heartbeat
+  const client = { res, id: Date.now() };
+  sseClients.push(client);
+  console.log('SSE client connected:', client.id);
+  req.on('close', () => {
+    const idx = sseClients.indexOf(client);
+    if (idx >= 0) sseClients.splice(idx, 1);
+    console.log('SSE client disconnected:', client.id);
+  });
+});
+
 if (ENABLE_TEST) {
   app.post('/test/donate', express.json(), (req, res) => {
     broadcast({ id: 'test-' + Date.now(), amount: 100, currency: 'KES', name: 'Test Fan', message: 'Asante sana! Keep streaming!', ...req.body });
@@ -112,15 +138,10 @@ if (ENABLE_TEST) {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-server.on('upgrade', (req, socket, head) => {
-  const url = new URL(req.url, 'http://x');
-  if (url.pathname !== '/ws' || (OVERLAY_TOKEN && !safeEqual(url.searchParams.get('token') || '', OVERLAY_TOKEN))) {
-    socket.destroy();
-    return;
+setInterval(() => {
+  for (const client of sseClients) {
+    try { client.res.write(': ping\n\n'); } catch { /* client gone */ }
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
-});
-
-setInterval(() => { for (const c of wss.clients) if (c.readyState === 1) c.ping(); }, 25000);
+}, 25000);
 
 server.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`));

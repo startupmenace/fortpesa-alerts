@@ -62,15 +62,13 @@ function next() {
   }, DURATION);
 }
 
-function connect() {
-  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?token=${encodeURIComponent(token)}`);
-  ws.onmessage = (e) => {
-    const d = JSON.parse(e.data);
-    if (d.type === 'donation') { queue.push(d); next(); }
-  };
-  ws.onclose = () => setTimeout(connect, 2000); // auto-reconnect
-}
-connect();
+const url = `${location.origin}/events?token=${encodeURIComponent(token)}`;
+const evt = new EventSource(url);
+evt.onmessage = (e) => {
+  const d = JSON.parse(e.data);
+  if (d.type === 'donation') { queue.push(d); next(); }
+};
+evt.onerror = () => { evt.close(); setTimeout(() => location.reload(), 3000); };
 </script>
 </body>
 </html>
