@@ -1,0 +1,13 @@
+{
+  "name": "fortpesa-alerts",
+  "version": "1.0.0",
+  "description": "Live stream donation alerts for M-Pesa, powered by FortPesa webhooks",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}

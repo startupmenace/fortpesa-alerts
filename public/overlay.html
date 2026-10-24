@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Donation Alerts</title>
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }
+  #alert {
+    position: absolute; left: 50%; top: 40px; transform: translate(-50%, -200%);
+    min-width: 420px; max-width: 800px; padding: 22px 34px; border-radius: 18px; text-align: center;
+    background: linear-gradient(135deg, #00a651, #006b34); color: #fff;
+    box-shadow: 0 10px 30px rgba(0,0,0,.45); transition: transform .5s cubic-bezier(.2,1.4,.4,1);
+  }
+  #alert.show { transform: translate(-50%, 0); }
+  #title { font-size: 34px; font-weight: 800; }
+  #title b { color: #ffe36e; }
+  #msg { font-size: 24px; margin-top: 8px; word-wrap: break-word; }
+</style>
+</head>
+<body>
+<div id="alert"><div id="title"></div><div id="msg"></div></div>
+<script>
+const params = new URLSearchParams(location.search);
+const token = params.get('token') || '';
+const tts = params.get('tts') !== '0';           // add ?tts=0 to disable voice
+const minTts = Number(params.get('minTts') || 50); // only read messages >= this amount
+const DURATION = Number(params.get('duration') || 8000);
+
+const el = document.getElementById('alert');
+const queue = [];
+let busy = false;
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function chime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [660, 880, 1100].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.12);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.3);
+      o.start(ctx.currentTime + i * 0.12); o.stop(ctx.currentTime + i * 0.12 + 0.3);
+    });
+  } catch (e) {}
+}
+
+function next() {
+  if (busy || !queue.length) return;
+  busy = true;
+  const d = queue.shift();
+  document.getElementById('title').innerHTML = `<b>${esc(d.name)}</b> donated ${esc(d.currency)} ${d.amount.toLocaleString()}!`;
+  document.getElementById('msg').textContent = d.message || '';
+  el.classList.add('show');
+  chime();
+  if (tts && d.message && d.amount >= minTts && 'speechSynthesis' in window) {
+    speechSynthesis.speak(new SpeechSynthesisUtterance(`${d.name} says: ${d.message}`));
+  }
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { busy = false; next(); }, 700);
+  }, DURATION);
+}
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  ws.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'donation') { queue.push(d); next(); }
+  };
+  ws.onclose = () => setTimeout(connect, 2000); // auto-reconnect
+}
+connect();
+</script>
+</body>
+</html>

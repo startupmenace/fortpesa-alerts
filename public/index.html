@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support the stream</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f1a14; color: #fff; display: flex; justify-content: center; padding: 24px; }
+  form { background: #16261d; padding: 24px; border-radius: 14px; width: 100%; max-width: 380px; }
+  h1 { margin-top: 0; font-size: 22px; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #2f4a3a; background: #0f1a14; color: #fff; font-size: 16px; }
+  button { margin-top: 18px; width: 100%; padding: 12px; border: 0; border-radius: 8px; background: #00a651; color: #fff; font-size: 17px; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .6; }
+  #status { margin-top: 14px; min-height: 22px; font-size: 15px; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>Send a tip via M-Pesa</h1>
+  <label>Your name</label><input name="name" maxlength="40" placeholder="Anonymous">
+  <label>M-Pesa phone number</label><input name="phone" inputmode="tel" placeholder="0712345678" required>
+  <label>Amount (KES)</label><input name="amount" type="number" min="10" step="1" value="100" required>
+  <label>Message (optional)</label><textarea name="message" maxlength="200" rows="2"></textarea>
+  <button id="b">Donate</button>
+  <div id="status"></div>
+</form>
+<script>
+const f = document.getElementById('f'), s = document.getElementById('status'), b = document.getElementById('b');
+f.onsubmit = async (e) => {
+  e.preventDefault();
+  b.disabled = true; s.textContent = 'Sending M-Pesa prompt...';
+  const body = Object.fromEntries(new FormData(f));
+  const r = await fetch('/api/donate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (!r.ok) { s.textContent = d.error; b.disabled = false; return; }
+  s.textContent = 'Check your phone and enter your M-Pesa PIN...';
+  for (let i = 0; i < 50; i++) {            // poll ~2.5 minutes
+    await new Promise(r => setTimeout(r, 3000));
+    const st = await fetch('/api/donate/' + d.uuid).then(r => r.json()).catch(() => ({}));
+    if (st.status === 'success') { s.textContent = 'Thank you! Your tip was received.'; b.disabled = false; return; }
+    if (['failed', 'cancelled', 'expired'].includes(st.status)) { s.textContent = 'Payment ' + st.status + '. Try again.'; b.disabled = false; return; }
+  }
+  s.textContent = 'Timed out waiting for payment.'; b.disabled = false;
+};
+</script>
+</body>
+</html>

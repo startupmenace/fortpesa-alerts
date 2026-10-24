@@ -1,0 +1,11 @@
+name: greenbird
+package: wasmer/fortpesa-alerts:latest
+env:
+  FORTPESA_API_KEY: ${FORTPESA_API_KEY}
+  FORTPESA_CHANNEL_ID: ${FORTPESA_CHANNEL_ID}
+  FORTPESA_WEBHOOK_SECRET: ${FORTPESA_WEBHOOK_SECRET}
+  FORTPESA_API_BASE: ${FORTPESA_API_BASE}
+  OVERLAY_TOKEN: ${OVERLAY_TOKEN}
+  PORT: ${PORT}
+kind: wasmer.io/App.v0
+description: M-Pesa live donation alerts for OBS, Express on Wasmer Edge
