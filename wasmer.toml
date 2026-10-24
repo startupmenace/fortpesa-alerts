@@ -1,2 +1,8 @@
 [package]
 name = "fortune/greenbird"
+
+[build]
+command = "npm install"
+
+[run]
+command = "npm start"

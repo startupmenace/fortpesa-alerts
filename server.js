@@ -19,7 +19,7 @@ const PORT = process.env.PORT || 3000;
 const CHANNEL_ID = parseInt(process.env.FORTPESA_CHANNEL_ID || '', 10);
 const WEBHOOK_SECRET = process.env.FORTPESA_WEBHOOK_SECRET || '';
 const OVERLAY_TOKEN = process.env.OVERLAY_TOKEN || '';
-const MIN_AMOUNT = parseInt(process.env.MIN_AMOUNT || '10', 10);
+const MIN_AMOUNT = parseInt(process.env.MIN_AMOUNT || '1', 10);
 const ENABLE_TEST = process.env.ENABLE_TEST === '1';
 
 const app = express();

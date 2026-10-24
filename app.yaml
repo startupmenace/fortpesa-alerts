@@ -1,5 +1,7 @@
 name: greenbird
-package: wasmer/fortpesa-alerts:latest
+app_id: da_neGIvtaUgYM6
+owner: fortune
+package: .
 env:
   FORTPESA_API_KEY: ${FORTPESA_API_KEY}
   FORTPESA_CHANNEL_ID: ${FORTPESA_CHANNEL_ID}
