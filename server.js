@@ -29,14 +29,15 @@ const server = http.createServer(app);
 const pending = new Map();
 const alerted = new Set(); // dedupe retried webhooks
 
-// SSE clients: array of { res, token }
-const sseClients = [];
+// Recent alerts for polling (last 100, each with timestamp)
+const alerts = [];
+const MAX_ALERTS = 100;
 
 function broadcast(alert) {
-  const data = `data: ${JSON.stringify({ type: 'donation', ...alert })}\n\n`;
-  for (const client of sseClients) {
-    try { client.res.write(data); } catch { /* client gone */ }
-  }
+  const entry = { ...alert, ts: Date.now() };
+  alerts.unshift(entry);
+  if (alerts.length > MAX_ALERTS) alerts.pop();
+  console.log('alert broadcast:', entry.id);
 }
 
 const FRIENDLY = {
@@ -106,27 +107,15 @@ app.post('/webhook/fortpesa', express.raw({ type: '*/*', limit: '100kb' }), asyn
   } catch (e) { console.error('webhook processing failed:', e.message); }
 });
 
-// SSE endpoint for OBS overlay
-app.get('/events', (req, res) => {
+// Polling endpoint for OBS overlay — returns alerts since the given timestamp
+app.get('/api/alerts', (req, res) => {
   const token = req.query.token || '';
   if (OVERLAY_TOKEN && !safeEqual(token, OVERLAY_TOKEN)) {
     return res.sendStatus(401);
   }
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
-  });
-  res.write('\n'); // initial heartbeat
-  const client = { res, id: Date.now() };
-  sseClients.push(client);
-  console.log('SSE client connected:', client.id);
-  req.on('close', () => {
-    const idx = sseClients.indexOf(client);
-    if (idx >= 0) sseClients.splice(idx, 1);
-    console.log('SSE client disconnected:', client.id);
-  });
+  const since = Number(req.query.since || 0);
+  const newAlerts = alerts.filter(a => a.ts > since);
+  res.json({ alerts: newAlerts, serverTime: Date.now() });
 });
 
 if (ENABLE_TEST) {
@@ -137,11 +126,5 @@ if (ENABLE_TEST) {
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-setInterval(() => {
-  for (const client of sseClients) {
-    try { client.res.write(': ping\n\n'); } catch { /* client gone */ }
-  }
-}, 25000);
 
 server.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`));

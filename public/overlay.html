@@ -29,6 +29,7 @@ const DURATION = Number(params.get('duration') || 8000);
 const el = document.getElementById('alert');
 const queue = [];
 let busy = false;
+let lastTs = 0;
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -62,13 +63,21 @@ function next() {
   }, DURATION);
 }
 
-const url = `${location.origin}/events?token=${encodeURIComponent(token)}`;
-const evt = new EventSource(url);
-evt.onmessage = (e) => {
-  const d = JSON.parse(e.data);
-  if (d.type === 'donation') { queue.push(d); next(); }
-};
-evt.onerror = () => { evt.close(); setTimeout(() => location.reload(), 3000); };
+async function poll() {
+  try {
+    const r = await fetch(`/api/alerts?token=${encodeURIComponent(token)}&since=${lastTs}`);
+    const d = await r.json();
+    if (d.alerts && d.alerts.length) {
+      // newest first from server, push to queue in order
+      d.alerts.reverse().forEach(a => queue.push(a));
+      if (d.serverTime) lastTs = d.serverTime;
+      next();
+    }
+  } catch (e) { /* poll failed, retry next tick */ }
+  setTimeout(poll, 2000);
+}
+
+poll();
 </script>
 </body>
 </html>
