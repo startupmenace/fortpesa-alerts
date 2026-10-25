@@ -12,6 +12,7 @@ if (fs.existsSync(envFile)) {
 const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
+const { ObsWebSocket } = require('obs-websocket-js');
 const { api, verifySignature, normalizePhone, safeEqual } = require('./fortpesa');
 
 const PORT = process.env.PORT || 3000;
@@ -20,6 +21,10 @@ const WEBHOOK_SECRET = process.env.FORTPESA_WEBHOOK_SECRET || '';
 const OVERLAY_TOKEN = process.env.OVERLAY_TOKEN || '';
 const MIN_AMOUNT = parseInt(process.env.MIN_AMOUNT || '1', 10);
 const ENABLE_TEST = process.env.ENABLE_TEST === '1';
+const OBS_HOST = process.env.OBS_WS_HOST || 'localhost';
+const OBS_PORT = process.env.OBS_WS_PORT || '4455';
+const OBS_PASSWORD = process.env.OBS_WS_PASSWORD || undefined;
+const ALERT_DURATION = parseInt(process.env.ALERT_DURATION || '8000', 10);
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +33,60 @@ const server = http.createServer(app);
 // In-memory: lost on restart; use Redis/DB in production.
 const pending = new Map();
 const alerted = new Set(); // dedupe retried webhooks
+
+// OBS WebSocket integration
+const obs = new ObsWebSocket();
+let obsReady = false;
+
+async function connectObs() {
+  try {
+    await obs.connect(`ws://${OBS_HOST}:${OBS_PORT}`, OBS_PASSWORD);
+    obsReady = true;
+    console.log('Connected to OBS WebSocket');
+    try {
+      await obs.call('GetInputSettings', { inputName: 'DonationAlert' });
+    } catch (e) {
+      await obs.call('CreateInput', {
+        inputName: 'DonationAlert',
+        inputKind: 'text_gdiplus',
+        inputSettings: {
+          text: '',
+          font: { size: 48, face: 'Arial', style: 'Regular' },
+          color: 0x00FF00,
+          align: 2,
+          valign: 2,
+          outline: 0,
+          outline_color: 0,
+          opacity: 100
+        },
+        sceneItemEnabled: false
+      });
+      console.log('Created DonationAlert text source in OBS');
+    }
+  } catch (e) {
+    console.error('OBS WebSocket connection failed:', e.message);
+    obsReady = false;
+  }
+}
+
+function sendObsAlert(alert) {
+  if (!obsReady) return;
+  const text = `${alert.name} donated ${alert.currency} ${alert.amount.toLocaleString()}!${alert.message ? '\n' + alert.message : ''}`;
+  obs.call('SetInputSettings', {
+    inputName: 'DonationAlert',
+    inputSettings: { text: text },
+    overlay: false
+  }).then(() => obs.call('SetInputSceneItemEnabled', {
+    inputName: 'DonationAlert',
+    sceneItemEnabled: true
+  })).catch(() => {});
+  setTimeout(() => {
+    obs.call('SetInputSceneItemEnabled', {
+      inputName: 'DonationAlert',
+      sceneItemEnabled: false
+    }).catch(() => {});
+  }, ALERT_DURATION);
+}
 
 // Recent alerts for polling (last 100, each with timestamp)
 const alerts = [];
@@ -38,6 +97,7 @@ function broadcast(alert) {
   alerts.unshift(entry);
   if (alerts.length > MAX_ALERTS) alerts.pop();
   console.log('alert broadcast:', entry.id);
+  sendObsAlert(alert);
 }
 
 const FRIENDLY = {
@@ -128,3 +188,4 @@ if (ENABLE_TEST) {
 app.use(express.static(path.join(__dirname, 'public')));
 
 server.listen(PORT, () => console.log(`Listening on http://localhost:${PORT}`));
+connectObs();
