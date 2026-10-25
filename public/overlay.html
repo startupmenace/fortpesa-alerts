@@ -4,21 +4,34 @@
 <meta charset="utf-8">
 <title>Donation Alerts</title>
 <style>
-  html, body { margin: 0; background: transparent; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }
-  #alert {
-    position: absolute; left: 50%; top: 40px; transform: translate(-50%, -200%);
-    min-width: 420px; max-width: 800px; padding: 22px 34px; border-radius: 18px; text-align: center;
-    background: linear-gradient(135deg, #00a651, #006b34); color: #fff;
-    box-shadow: 0 10px 30px rgba(0,0,0,.45); transition: transform .5s cubic-bezier(.2,1.4,.4,1);
+  html, body {
+    margin: 0; 
+    height: 100%; 
+    width: 100%; 
+    background: transparent; 
+    overflow: hidden; 
+    font-family: 'Segoe UI', Arial, sans-serif;
   }
-  #alert.show { transform: translate(-50%, 0); }
-  #title { font-size: 34px; font-weight: 800; }
+  #alert {
+    position: fixed;
+    left: 0; top: 0; bottom: 0; right: 0;
+    min-width: initial; max-width: initial; padding: 40px;
+    background: linear-gradient(135deg, #00a651, #006b34);
+    color: #fff; 
+    text-align: center;
+    z-index: 9999;
+  }
+  #title { font-size: 48px; font-weight: 800; }
   #title b { color: #ffe36e; }
-  #msg { font-size: 24px; margin-top: 8px; word-wrap: break-word; }
+  #msg { font-size: 32px; margin-top: 12px; word-wrap: break-word; }
 </style>
 </head>
 <body>
-<div id="alert"><div id="title"></div><div id="msg"></div></div>
+<div id="alert">
+  <div id="title"></div>
+  <div id="msg"></div>
+</div>
+
 <script>
 const params = new URLSearchParams(location.search);
 const token = params.get('token') || '';
@@ -53,19 +66,16 @@ function next() {
   const d = queue.shift();
   document.getElementById('title').innerHTML = `<b>${esc(d.name)}</b> donated ${esc(d.currency)} ${d.amount.toLocaleString()}!`;
   document.getElementById('msg').textContent = d.message || '';
-  el.classList.add('show');
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 100);
   chime();
   try {
-    const audio = document.getElementById('alertSound');
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
+    if (tts && d.message && d.amount >= minTts && 'speechSynthesis' in window) {
+      speechSynthesis.speak(new SpeechSynthesisUtterance(`${d.name} says: ${d.message}`));
+    }
   } catch (e) {}
-  if (tts && d.message && d.amount >= minTts && 'speechSynthesis' in window) {
-    speechSynthesis.speak(new SpeechSynthesisUtterance(`${d.name} says: ${d.message}`));
-  }
   setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => { busy = false; next(); }, 700);
+    queue.length > 0 ? next() : el.style.display = 'none';
   }, DURATION);
 }
 
@@ -74,9 +84,9 @@ async function poll() {
     const r = await fetch(`/api/alerts?token=${encodeURIComponent(token)}&since=${lastTs}`);
     const d = await r.json();
     if (d.alerts && d.alerts.length) {
-      // newest first from server, push to queue in order
       d.alerts.reverse().forEach(a => queue.push(a));
       if (d.serverTime) lastTs = d.serverTime;
+      el.style.display = 'block';
       next();
     }
   } catch (e) { /* poll failed, retry next tick */ }
